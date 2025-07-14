@@ -2,6 +2,9 @@
 
 FROM oven/bun:alpine AS base
 
+# Install curl for health checks (ADD THIS LINE)
+RUN apk add --no-cache curl
+
 # Declare DATABASE_URL as a build argument
 ARG DATABASE_URL
 
@@ -42,7 +45,8 @@ ENV NODE_ENV production
 ENV NEXT_TELEMETRY_DISABLED 1
 
 # Make sure DATABASE_URL is also available at runtime if the app needs it
-ENV DATABASE_URL=${DATABASE_URL} # Re-declare for runtime, using the build argument's value
+# This takes the value from the build argument and makes it available for the running container.
+ENV DATABASE_URL=${DATABASE_URL} 
 
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs

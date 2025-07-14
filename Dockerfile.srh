@@ -1,0 +1,10 @@
+# Dockerfile.srh
+FROM hiett/serverless-redis-http:latest
+# Install curl for the health check
+RUN apk add --no-cache curl
+# Create the directory where the application expects the config
+RUN mkdir -p /app/srh-config
+# Copy your tokens.json into the correct path inside the image
+COPY srh-config/tokens.json /app/srh-config/tokens.json
+# Ensure permissions if necessary
+RUN chmod 644 /app/srh-config/tokens.json

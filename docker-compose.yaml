@@ -13,7 +13,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432" # Expose for local access if needed, but 'web' service connects internally
+      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U opencut -d opencut"]
       interval: 5s
@@ -23,38 +23,45 @@ services:
     networks:
       - default
 
-  # Serverless Redis HTTP Gateway (for local development)
-  serverless-redis-http:
-    image: hiett/serverless-redis-http:latest
-    container_name: opencut-redis-http
-    restart: unless-stopped
-    environment:
-      REDIS_URL: "redis://redis:6379" # Connects to the 'redis' service (if defined, assuming it is)
-      TOKEN: "example_token" # Matches UPSTASH_REDIS_REST_TOKEN in web service
-    ports:
-      - "8079:80" # Expose for local access if needed, but 'web' service connects internally
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:80 || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    networks:
-      - default
-
-  # Redis Service (Actual Redis for serverless-redis-http to connect to)
-  # This might be implicit or explicitly defined, adding it here for completeness
+  # Redis Service (Actual Redis server)
   redis:
     image: redis:7-alpine
     container_name: opencut-redis
     restart: unless-stopped
     ports:
-      - "6379:6379" # Exposed for completeness, not strictly necessary for serverless-redis-http
+      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 5
+      start_period: 10s
+    volumes:
+      - redis_data:/data
+    networks:
+      - default
+
+  # Serverless Redis HTTP Gateway (for local development)
+  serverless-redis-http:
+    build:
+      context: .
+      dockerfile: Dockerfile.srh
+    container_name: opencut-redis-http
+    restart: unless-stopped
+    environment:
+      REDIS_URL: "redis://redis:6379"
+      TOKEN: "example_token"
+    ports:
+      - "8079:80"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 45s # Increased start_period
+    depends_on:
+      redis:
+        condition: service_healthy
     networks:
       - default
 
@@ -62,21 +69,21 @@ services:
   web:
     build:
       context: .
-      dockerfile: ./apps/web/Dockerfile # Ensure this path is correct relative to the docker-compose.yaml
-      args: # <<< THIS IS THE CRUCIAL ADDITION FOR BUILD-TIME VARS
-        DATABASE_URL: "postgresql://opencut:opencutthegoat@db:5432/opencut" # Passed during image build
+      dockerfile: ./apps/web/Dockerfile
+      args:
+        DATABASE_URL: "postgresql://opencut:opencutthegoat@db:5432/opencut"
     container_name: opencut-web
     restart: unless-stopped
     ports:
       - "3000:3000"
-    environment: # These are for variables available when the container is running
+    environment:
       - DATABASE_URL=postgresql://opencut:opencutthegoat@db:5432/opencut
       - BETTER_AUTH_URL=http://localhost:3000
       - BETTER_AUTH_SECRET=your-production-secret-key-here # IMPORTANT: REPLACE THIS WITH A SECURE GENERATED SECRET
       - UPSTASH_REDIS_REST_URL=http://serverless-redis-http:80 # Internal Docker network hostname
       - UPSTASH_REDIS_REST_TOKEN=example_token
-      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID} # Pulled from host env or .env file for docker-compose
-      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET} # Pulled from host env or .env file for docker-compose
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
     depends_on:
       db:
         condition: service_healthy
@@ -87,13 +94,14 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 30s
+      start_period: 120s
     networks:
       - default
 
 volumes:
-  postgres_data: {} # Defines a named volume for persistent database data
+  postgres_data: {}
+  redis_data: {}
 
 networks:
   default:
-    name: opencut-network # Defines a custom bridge network for internal communication
+    name: opencut-network
