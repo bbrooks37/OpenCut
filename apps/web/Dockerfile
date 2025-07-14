@@ -1,9 +1,18 @@
+# apps/web/Dockerfile
+
 FROM oven/bun:alpine AS base
+
+# Declare DATABASE_URL as a build argument
+ARG DATABASE_URL
 
 # Install dependencies and build the application
 FROM base AS builder
 
 WORKDIR /app
+
+# Set DATABASE_URL as an environment variable for the build stage
+# This is crucial for Next.js's 'bun run build' to recognize the DB URL
+ENV DATABASE_URL=${DATABASE_URL}
 
 COPY package.json package.json
 COPY bun.lock bun.lock
@@ -32,6 +41,9 @@ WORKDIR /app
 ENV NODE_ENV production
 ENV NEXT_TELEMETRY_DISABLED 1
 
+# Make sure DATABASE_URL is also available at runtime if the app needs it
+ENV DATABASE_URL=${DATABASE_URL} # Re-declare for runtime, using the build argument's value
+
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
@@ -39,7 +51,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/apps/web/public ./apps/web/public
 COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/static ./apps/web/.next/static
 
-RUN chown nextjs:nodejs apps
+RUN chown -R nextjs:nodejs apps # Use -R to recursively change ownership of 'apps' directory
 
 USER nextjs
 
